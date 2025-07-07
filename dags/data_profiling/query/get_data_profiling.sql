@@ -1,0 +1,1 @@
+SELECT * FROM data_profile_quality();

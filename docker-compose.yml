@@ -1,0 +1,210 @@
+version: '3.8'
+services:
+  airflow:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: airflow_standalone
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=${AIRFLOW_DB_URI}
+      - AIRFLOW__CORE__LOAD_DEFAULT_CONNECTIONS=False
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
+    depends_on:
+      - airflow_metadata
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./include:/opt/airflow/include
+    networks:
+      - airflow-networks
+
+  airflow_metadata:
+    image: postgres:latest
+    container_name: airflow_metadata
+    environment:
+      POSTGRES_USER: ${AIRFLOW_DB_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME}
+    ports:
+      - ${AIRFLOW_DB_PORT}:5432
+    volumes:
+      - airflow_metadata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "512m"
+    networks:
+      - airflow-networks
+
+  data_profiling_db:
+    image: postgres:latest
+    container_name: data_profiling_db
+    environment:
+      POSTGRES_USER: ${PROFILING_DB_USER}
+      POSTGRES_PASSWORD: ${PROFILING_DB_PASSWORD}
+      POSTGRES_DB: ${PROFILING_DB_NAME}
+    ports:
+      - ${PROFILING_DB_PORT}:5432
+    networks:
+      - airflow-networks
+    volumes:
+      - ./dataset/profiling:/docker-entrypoint-initdb.d
+      - data_profiling_db:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "512m"
+
+  vcapital_db_src: 
+    image: postgres:latest
+    container_name: vcapital_db_src
+    environment:
+      POSTGRES_USER: ${VCAPITAL_DB_USER}
+      POSTGRES_PASSWORD: ${VCAPITAL_DB_PASSWORD}
+      POSTGRES_DB: ${VCAPITAL_DB_NAME}
+    ports:
+      - ${VCAPITAL_DB_PORT}:5432
+    networks:
+      - airflow-networks
+    volumes:
+      - ./dataset/sources:/docker-entrypoint-initdb.d
+      - vcapital_db_src:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "512m"
+
+  minio:
+    image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    container_name: minio
+    hostname: minio
+    restart: always
+    volumes:
+      - minio-data:/data
+    ports:
+      - ${MINIO_API_PORT}:9000
+      - ${MINIO_CONS_PORT}:9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "512m"
+    networks:
+      - airflow-networks
+
+  vcapital_db_dwh:
+    image: postgres:latest
+    container_name: vcapital_db_dwh
+    environment:
+      POSTGRES_USER: ${WAREHOUSE_DB_USER}
+      POSTGRES_PASSWORD: ${WAREHOUSE_DB_PASSWORD}
+      POSTGRES_DB: ${WAREHOUSE_DB_NAME}
+    ports:
+      - ${WAREHOUSE_DB_PORT}:5432
+    networks:
+      - airflow-networks
+    volumes:
+      - ./dataset/warehouse:/docker-entrypoint-initdb.d
+      - vcapital_db_dwh:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "512m"
+
+  spark-master:
+    image: bitnami/spark:3.5.5
+    command: bin/spark-class org.apache.spark.deploy.master.Master
+    container_name: spark-master
+    ports:
+      - "9090:8080"
+      - "7077:7077"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "1g"
+    networks:
+      - airflow-networks
+
+  spark-worker-1:
+    image: bitnami/spark:3.5.5
+    container_name: spark-worker-1
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_MODE: worker
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_MASTER_URL: spark://spark-master:7077
+    networks:
+      - airflow-networks
+
+  spark-worker-2:
+    image: bitnami/spark:3.5.5
+    container_name: spark-worker-2
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_MODE: worker
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_MASTER_URL: spark://spark-master:7077
+    networks:
+      - airflow-networks
+
+  spark-worker-3:
+    image: bitnami/spark:3.5.5
+    container_name: spark-worker-3
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_MODE: worker
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_MASTER_URL: spark://spark-master:7077
+    networks:
+      - airflow-networks
+
+volumes:
+  airflow_metadata:
+    driver: local
+    name: airflow_metadata
+  
+  data_profiling_db:
+    driver: local
+    name: data_profiling_db
+
+  vcapital_db_src:
+    driver: local
+    name: vcapital_db_src
+
+  minio-data:
+    driver: local
+    name: minio-data
+
+  vcapital_db_dwh:
+    driver: local
+    name: vcapital_db_dwh
+
+networks:
+  airflow-networks:
+    driver: bridge
+    name: airflow-networks

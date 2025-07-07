@@ -1,0 +1,2 @@
+INSERT INTO data_profile_quality (person_in_charge, source, schema, table_name, n_rows, n_cols, data_profile, data_quality)
+VALUES (%(person_in_charge)s, %(source)s, %(schema)s, %(table_name)s, %(n_rows)s, %(n_cols)s, %(data_profile)s, %(data_quality)s)

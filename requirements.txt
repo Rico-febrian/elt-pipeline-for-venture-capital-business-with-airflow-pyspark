@@ -1,0 +1,9 @@
+pandas
+pendulum
+minio==7.2.15
+apache-airflow-providers-google
+apache-airflow-providers-slack
+apache-airflow-providers-apache-spark
+gspread
+pangres
+pyspark==3.5.5
